@@ -1,0 +1,10 @@
+.env
+db.sqlite3
+masika_wathu_backend.pdf
+
+tests/
+myenv/
+
+__pycahe__/
+
+migrations/
