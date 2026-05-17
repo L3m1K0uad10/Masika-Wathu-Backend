@@ -9,6 +9,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from django.db import IntegrityError, transaction
 
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
@@ -85,6 +86,15 @@ class PayChanguWebhookView(APIView):
         signature = request.headers.get('Signature') or request.headers.get('paychangu-signature')
         if not signature:
             logger.warning("Missing webhook signature")
+
+            PaymentEvent.objects.create(
+                event_type = "missing_signature",
+                payload = {"raw_body": raw_body},
+                signature = "",
+                processing_status = "failed",
+                error_message = "Missing webhook signature"
+            )
+
             return Response({"error": "Missing signature"}, status = status.HTTP_400_BAD_REQUEST)
 
         # verifying signature
@@ -99,147 +109,197 @@ class PayChanguWebhookView(APIView):
             logger.warning("Invalid webhook signature")
 
             PaymentEvent.objects.create(
-                event_type="invalid_signature",
-                payload={"raw_body": raw_body},
-                signature=signature,
-                processing_status="failed",
-                error_message="Invalid webhook signature"
+                event_type = "invalid_signature",
+                payload = {"raw_body": raw_body},
+                signature = signature,
+                processing_status = "failed",
+                error_message = "Invalid webhook signature"
             )
+
             return Response({"error": "Invalid signature"}, status = status.HTTP_403_FORBIDDEN)
         
-        logger.info("SIGNATURE VERIFIED SUCCESSFULLY")
+        logger.info("Webhook signature verified successfully")
         
         # parsing payload
         try:
             payload = json.loads(raw_body)
-            event_type = payload.get("event", "unknown")
-            event_id = payload.get("reference") or tx_ref # generating a reliable idempotency key
-
-            existing_event = PaymentEvent.objects.filter(
-                event_id = event_id,
-                processing_status = 'processed'
-            ).exists()
-
-            if existing_event:
-                return Response({"message": "Duplicate webhook ignored"}, status = 200)
-
-            payment_event = PaymentEvent.objects.create(
-                event_type = event_type,
-                tx_ref = payload.get("tx_ref") or payload.get("data", {}).get("tx_ref"),
-                payload = payload,
-                signature = signature,
-                processing_status = 'received'
-            )
         except json.JSONDecodeError:
             logger.error("Invalid JSON payload")
+
+            PaymentEvent.objects.create(
+                event_type = "invalid_json",
+                payload = {"raw_body": raw_body},
+                signature = signature,
+                processing_status = "failed",
+                error_message = "Invalid JSON payload"
+            )
+
             return Response({"error": "Invalid JSON"}, status = status.HTTP_400_BAD_REQUEST)
 
-        logger.info(f"Webhook Payload: {payload}")
+        logger.info(f"Webhook Payload received: {payload}")
+
+        event_type = payload.get("event", "unknown")
 
         tx_ref = payload.get("tx_ref") or payload.get("data", {}).get("tx_ref")
         
         if not tx_ref:
-            logger.warning("Missing tx_ref in payload")
+            logger.warning("Missing tx_ref in webhook payload")
+
+            PaymentEvent.objects.create(
+                event_type = event_type,
+                payload = payload,
+                signature = signature,
+                processing_status = "failed",
+                error_message = "Missing tx_ref"
+            )
+
             return Response({"error": "Missing tx_ref"}, status = status.HTTP_400_BAD_REQUEST)
         
-        logger.info(f"Webhook received for tx_ref: {tx_ref}")
+        event_id = (
+            payload.get("reference")
+            or payload.get("id")
+            or f"{event_type}_{tx_ref}"
+        )
 
-        # verification logic (Handling Dashboard Test vs Real Payment)
-        is_test_mode = payload.get("mode") == "test"
-
-        payment_status = None
-        paychangu_reference = None
-        
-        # REAL PAYMENT FLOW
-        if not is_test_mode:
-            logger.info(
-                f"Verifying payment with PayChangu for tx_ref: {tx_ref}"
+        # implementing idempotency protection
+        try:
+            payment_event = PaymentEvent.objects.create(
+                event_id = event_id,
+                event_type = event_type,
+                tx_ref = tx_ref,
+                payload = payload,
+                signature = signature,
+                processing_status = 'received'
+            )
+        except IntegrityError:
+            logger.warning(
+                f"Duplicate webhook ignored for event_id: {event_id}"
             )
 
-            # only call verify_paychangu_transaction for REAL payments
-            verification_response = verify_paychangu_transaction(tx_ref)
-            verification_data = verification_response.get("data", {})
-            payment_status = verification_data.get("status")
-            paychangu_reference = verification_data.get("reference")
-        
-        # DASHBOARD TEST FLOW
-        else:
-            logger.info(
-                "Dashboard Test detected: "
-                "Skipping external API verification."
-            )
+            return Response({"message": "Duplicate webhook ignored"}, status = status.HTTP_200_OK)
 
-            payment_status = payload.get("status")
-            paychangu_reference = payload.get("reference")
+        # implementing main processing logic
+        try:
+            logger.info(f"Webhook received for tx_ref: {tx_ref}")
 
-        # Only process successful payments
-        # database update logic
-        if payment_status == "success":
-            try:
-                subscription = Subscription.objects.get(tx_ref = tx_ref)
-            except Subscription.DoesNotExist:
-                logger.error(
-                    f"Subscription not found for tx_ref: {tx_ref}"
+            is_test_mode = (payload.get("mode") == "test")
+
+            payment_status = None
+            paychangu_reference = None
+
+            # real payment flow
+            if not is_test_mode:
+
+                logger.info(
+                    f"Verifying payment with PayChangu "
+                    f"for tx_ref: {tx_ref}"
+                )
+
+                verification_response = verify_paychangu_transaction(tx_ref)
+
+                if verification_response.get("status") == "error":
+                    logger.error(
+                        f"PayChangu verification failed for tx_ref: {tx_ref}"
+                    )
+
+                    payment_event.processing_status = "failed"
+                    payment_event.error_message = verification_response.get("message")
+                    payment_event.save()
+
+                    return Response({"error": "Payment verification failed"}, status = status.HTTP_400_BAD_REQUEST)
+
+                verification_data = verification_response.get("data", {})
+                payment_status = verification_data.get("status")
+                paychangu_reference = verification_data.get("reference")
+
+            # dashboard test flow
+            else:
+                logger.info(
+                    "Dashboard test detected. "
+                    "Skipping external verification."
+                )
+
+                payment_status = payload.get("status")
+                paychangu_reference = payload.get("reference")
+
+            # payment not successful
+            if payment_status != "success":
+                logger.warning(
+                    f"Payment status is not successful. "
+                    f"Status received: {payment_status}"
                 )
 
                 payment_event.processing_status = "failed"
-                payment_event.error_message = "Subscription not found"
+                payment_event.error_message = (f"Payment status is {payment_status}")
+                payment_event.save()
+
+                return Response(
+                    {
+                        "message": (
+                            f"Payment status is "
+                            f"{payment_status}"
+                        )
+                    },
+                    status = status.HTTP_200_OK
+                )
+
+            # fetching subscription
+            try:
+                subscription = Subscription.objects.get(
+                    tx_ref = tx_ref
+                )
+            except Subscription.DoesNotExist:
+                logger.error(
+                    f"Subscription not found "
+                    f"for tx_ref: {tx_ref}"
+                )
+
+                payment_event.processing_status = "failed"
+                payment_event.error_message = (
+                    "Subscription not found"
+                )
                 payment_event.save()
 
                 return Response({"error": "Subscription not found"}, status = status.HTTP_404_NOT_FOUND)
 
-                
-            # Idempotent Protection: Only update if not already marked as paid to prevent duplicate processing: VERY IMPORTANT IN PAYMENT SYSTEM
-            if subscription.status == "paid":
+            # updating subscription
+            with transaction.atomic():
+                subscription.status = "paid"
+                subscription.paychangu_reference = paychangu_reference
+                subscription.paid_at = timezone.now()
+
+                subscription.expires_at = calculate_subscription_expiry(current_expiry = subscription.expires_at, duration_days = 30)
+                subscription.save()
+
                 logger.info(
-                    f"Subscription already processed for tx_ref: {tx_ref}"
+                    f"Subscription updated to PAID "
+                    f"for tx_ref: {tx_ref}"
                 )
 
+                # activating merchant 
+                merchant_profile = subscription.merchant
+                merchant_profile.is_active_subscription = True
+                merchant_profile.save()
+
+                logger.info(
+                    f"Merchant subscription activated "
+                    f"for merchant ID: "
+                    f"{merchant_profile.id}"
+                )
+
+                # marking event as processed
                 payment_event.processing_status = "processed"
-                payment_event.error_message = "Duplicate webhook ignored"
                 payment_event.save()
-
-                return Response({"message": "Already processed"}, status = status.HTTP_200_OK)
-                                
-            # Updating subscription
-            subscription.status = "paid"
-            subscription.paychangu_reference = paychangu_reference
-            subscription.paid_at = timezone.now()
-            subscription.expires_at = calculate_subscription_expiry(
-                current_expiry = subscription.expires_at,
-                duration_days = 30
-            )
-            subscription.save()
-
-            logger.info(
-                f"Subscription updated to PAID for tx_ref: {tx_ref}"
-            )
-
-            # Activating merchant subscription
-            merchant_profile = subscription.merchant
-            merchant_profile.is_active_subscription = True
-            merchant_profile.save()
-
-            payment_event.processing_status = "processed"
-            payment_event.save()
-
-            logger.info(
-                f"Merchant subscription activated "
-                f"for merchant ID: {merchant_profile.id}"
-            )
 
             return Response({"message": "Webhook processed successfully"}, status = status.HTTP_200_OK)
 
-        logger.warning(
-            f"Payment status is not successful. "
-            f"Status received: {payment_status}"
-        )
+        except Exception as e:
+            logger.exception(
+                "Unexpected webhook processing failure"
+            )
 
-        return Response(
-            {
-                "message": (
-                    f"Payment status is {payment_status}"
-                )
-            },
-            status=status.HTTP_200_OK
-        )
+            payment_event.processing_status = "failed"
+            payment_event.error_message = str(e)
+            payment_event.save()
+
+            return Response({"error": "Internal server error"}, status = status.HTTP_500_INTERNAL_SERVER_ERROR)

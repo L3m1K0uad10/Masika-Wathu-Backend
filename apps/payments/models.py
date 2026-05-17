@@ -29,6 +29,9 @@ class Subscription(models.Model):
     def __str__(self):
         return f"{self.merchant.shop_name} - {self.status}"
     
+    class Meta:
+        ordering = ['-created_at']
+
 
 class PaymentEvent(models.Model):
     EVENT_STATUS_CHOICES = (
@@ -58,3 +61,6 @@ class PaymentEvent(models.Model):
 
     def __str__(self):
         return f"{self.event_type} - {self.processing_status}"
+    
+    class Meta:
+        ordering = ['-created_at']

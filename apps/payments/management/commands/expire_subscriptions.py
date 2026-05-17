@@ -24,20 +24,22 @@ class Command(BaseCommand):
             subscription.save()
 
             # deactivating merchant
+            # checking if merchant still has another active subscription
             merchant_profile = subscription.merchant
-            merchant_profile.is_active_subscription = False
-            merchant_profile.save()
 
-            expired_count += 1
+            has_active_subscription = Subscription.objects.filter(
+                merchant = merchant_profile,
+                status = "paid",
+                expires_at__gt = now
+            ).exclude(id = subscription.id).exists()
+
+            # deactivate only if no active subscription remains
+            if not has_active_subscription:
+                merchant_profile.is_active_subscription = False
+                merchant_profile.save()
 
             self.stdout.write(
                 self.style.SUCCESS(
                     f"Expired subscription: {subscription.tx_ref}"
                 )
             )
-
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Total expired subscriptions: {expired_count}"
-            )
-        )
