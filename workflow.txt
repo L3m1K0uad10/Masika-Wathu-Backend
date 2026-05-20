@@ -513,6 +513,223 @@ the current system is already:
 - professionally structured
 ------------------------------------------------------
 
+TO DO:
+PostgreSQL migration
+Environment variables cleanup
+Dockerize backend
+Docker Compose
+Static/media handling
+API documentation
+Production settings split later
+
+------------------------------------------------------
+integrating PostgreSQL
+   i install PostgreSQL using brew: brew install postgresql
+   start PostgreSQL command: brew services start postgresql
+   check if it is running: psql postgres
+
+   brew list | grep postgres
+postgresql@18 is installed
+
+STARTING POSTGRESQL 
+to check status:(running or not)
+   brew services list
+
+to run it: brew services start postgresql@18
+then check again: 
+   brew services list
+i should see: 
+   postgresql@18 started
+
+TESTING POSTGRESQL 
+run:
+   psql postgres
+if successful, i should enter PostgreSQL shell:
+   postgres=#
+exist with:
+   \q
+
+CREATING THE POSTGRESQL DATABASE 
+run:
+   createdb masika_wathu_db
+then verifying:
+   psql postgres
+inside shell:
+   \l 
+i should see:
+   masika_wathu_db 
+exist:
+   \q
+
+INSTALLING PYTHON DRIVER
+inside the virtual Django virtual environment:
+   pip install psycopg2-binary django-environ
+then:
+   pip freeze > requirements.txt
+
+------------------------------------------------------
+Thursday 20 May 2026,
+------------------------------------------------------
+INTEGRATING POSTGRESQL:
+------------------------
+PostgreSQL installed 
+PostgreSQL service running 
+Database created 
+psycopg2 installed 
+django-environ installed 
+
+i can connect Django to PostgreSQL now
+added database variables to .env 
+updated settings.py 
+replaced:
+   DATABASES = {
+    'default': env.db(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
+    )
+   }
+with:
+   DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env("DB_NAME"),
+        "USER": env("DB_USER"),
+        "PASSWORD": env("DB_PASSWORD"),
+        "HOST": env("DB_HOST"),
+        "PORT": env("DB_PORT"),
+    }
+   }
+
+then run migrations to test PostgreSQL connection:
+i should see migrations applying normally
+
+i successfully migrated to PostgreSQL 
+now i can:
+- see tables
+- inspect rows 
+- query data 
+- see merchants 
+- see subscriptions 
+- see payment events 
+   how to?
+      run to be inside 
+         PostgreSQL: psql masika_wathu_db
+      show all tables: 
+         \dt
+      i will see tables like:
+         payments_subscription
+         payments_paymentevent
+         merchants_merchantprofile
+         users_customuser
+         ...
+      to view subscription rows:
+         SELECT * FROM payments_subscription;
+      etc...
+
+      to exit:
+         \q 
+
+   OR JUST USE EASIER VISUAL INTERFACE PROVIDER
+      pgAdmin 4
+      or 
+      TablePlus
+
+
+to stop PostgreSQL when Done working:
+   brew services stop postgresql@18
+verify:
+   brew services list
+
+to start PostgreSQL Next day: 
+   brew services start postgresql@18
+verify:
+   brew services list
+
+how to check if Django is using PostgreSQL:
+   python manage.py dbshell
+if it opens PostgreSQL shell:
+   psql (18.x)
+then Django is connected to PostgreSQL successfully 
+
+
+DOCKERIZING THE BACKEND: portable production environment 
+------------------------
+it is important so that backend works on any machine and 
+make deployment easier, no "works on my machine" problems 
+
+installed docker at: https://www.docker.com/products/docker-desktop/
+Due to some issue with incompatibility with my mac version i 
+will proceed with Colima + Docker
+
+(myenv) apple@APPLEs-MacBook-Pro masika_wathu_backend % brew install colima docker docker-compose
+==> Auto-updating Homebrew...
+Adjust how often this is run with `$HOMEBREW_AUTO_UPDATE_SECS` or disable with
+`$HOMEBREW_NO_AUTO_UPDATE=1`. Hide these hints with `$HOMEBREW_NO_ENV_HINTS=1` (see `man brew`).
+==> Downloading https://ghcr.io/v2/homebrew/core/portable-ruby/blobs/sha256:a372ff770be6364313bb5e9bd9e5abb128a1c35cd9f98b8a591ca07f948c7491
+######################################################################## 100.0%
+==> Pouring portable-ruby-4.0.4.catalina.bottle.tar.gz
+==> Auto-updated Homebrew!
+Updated 2 taps (homebrew/core and homebrew/cask).
+==> New Formulae
+far2l-tty: Unix TTY port of FAR Manager v2 (with NetRocks support)
+lisette: Language inspired by Rust that compiles to Go
+rustnet: Cross-platform network monitoring terminal UI with deep packet inspection
+zerolang: Programming language for agents with explicit effects and predictable memory
+==> New Casks
+duo-desktop: Endpoint health checks for Duo-protected applications
+executor: Tool discovery and execution layer for AI agents
+general-software-fresh: Short-term memory for screenshots, downloads, clipboard, and desktop files
+mole-app: Deep clean, analyze, and optimize app
+pgen: PostgreSQL client
+revpdf-editor: PDF editor for annotation and editing
+transcribex: Local AI transcription app
+
+You have 2 outdated formulae and 1 outdated cask installed.
+
+Warning: You are using macOS 10.15.
+We (and Apple) do not provide support for this old version.
+You may have better luck with MacPorts which supports older versions of macOS:
+  https://www.macports.org
+
+This is a Tier 3 configuration:
+  https://docs.brew.sh/Support-Tiers#tier-3
+You can report issues with Tier 3 configurations to Homebrew/* repositories!
+Read the above document before opening any issues or PRs.
+
+Inspect the formula dependency plan before installing with `brew install --ask`.
+Enable ask mode by setting `HOMEBREW_ASK=1`.
+Hide these hints with `HOMEBREW_NO_ENV_HINTS=1` (see `man brew`).
+==> Fetching downloads for: colima, docker and docker-compose
+✔︎ API Source colima.rb                              Verified      2.0KB/  2.0KB
+✔︎ API Source docker.rb                              Verified      2.7KB/  2.7KB
+✔︎ API Source docker-compose.rb                      Verified      2.3KB/  2.3KB
+==> Downloading https://raw.githubusercontent.com/Homebrew/homebrew-core/d1a3fb
+Already downloaded: /Users/apple/Library/Caches/Homebrew/downloads/71f1078c7f636ef423561aaa9c55509a301177baf0042784b3a67bc50283342e--go.rb
+==> Downloading https://raw.githubusercontent.com/Homebrew/homebrew-core/d1a3fb
+Already downloaded: /Users/apple/Library/Caches/Homebrew/downloads/3f0756345229c54b702b65e9893c742ee5721b869102268b3722f386527dc362--lima.rb
+==> Downloading https://raw.githubusercontent.com/Homebrew/homebrew-core/d1a3fb
+Already downloaded: /Users/apple/Library/Caches/Homebrew/downloads/b041dcc7f3f03cdded3d85573d6043e3c9a314298bd300b5192bec9c38e7140f--go-md2man.rb
+✔︎ API Source go.rb                                  Verified      4.5KB/  4.5KB
+✔︎ API Source lima.rb                                Verified      2.4KB/  2.4KB
+✔︎ Bottle Manifest docker-completion (29.5.1)        Downloaded    1.7KB/  1.7KB
+✔︎ Bottle docker-completion (29.5.1)                 Downloaded   71.5KB/ 71.5KB
+✔︎ API Source go-md2man.rb                           Verified      1.7KB/  1.7KB
+✔︎ Formula go-md2man (2.0.7)                         Verified     11.3KB/ 11.3KB
+✔︎ Formula docker-compose (5.1.3)                    Verified    448.9KB/448.9KB
+✔︎ Formula lima (2.1.1)                              Verified      7.8MB/  7.8MB
+✔︎ Formula go (1.26.3)                               Verified     34.1MB/ 34.1MB
+✔︎ Formula colima (0.10.1)p                   #####  Downloading  69.2MB/ 80.1MB
+✔︎ Resource go--gobootstrap                          Verified     80.1MB/ 80.1MB
+✔︎ Formula docker (29.5.1)
+==> Installing dependencies for colima: go and lima
+==> Installing colima dependency: go
+go: This software does not run on macOS versions older than Monterey.
+Error: An unsatisfied requirement failed this build.
+
+
+
+
+
+
 
 PROMPT FOR LAST STEP:
 before moving to implementing payment integration: i would 
@@ -532,3 +749,4 @@ Search/filtering
 IMPORTANT FOR PRODUCTION:
 should automate the expire_subscriptions later on in production to maybe run each midnight (Linux Con)
 make sure PayChangu urls and secret keys are production ready
+should delete the db.sqlite3 database when fully confident PostgreSQL works
