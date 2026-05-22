@@ -37,6 +37,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'django_filters',
+    'drf_spectacular',
+    'drf_spectacular_sidecar',
 
     # local apps
     'apps.users',
@@ -169,6 +171,8 @@ REST_FRAMEWORK = {
         'anon': '100/day',
         'user': '1000/day'
     },  
+
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 
