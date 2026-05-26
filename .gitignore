@@ -8,3 +8,9 @@ myenv/
 __pycahe__/
 
 migrations/
+
+media/
+private_media/
+staticfiles/
+
+*.pyc

@@ -1,0 +1,14 @@
+myenv/
+__pycache__/
+tests/
+media/
+private_media/
+staticfiles/
+*.pyc
+.env
+.git
+.gitignore
+db.sqlite3
+README.md 
+masika_wathu_backend.pdf
+workflow.txt

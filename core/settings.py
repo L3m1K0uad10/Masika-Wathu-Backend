@@ -37,6 +37,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'django_filters',
+    'drf_spectacular',
+    'drf_spectacular_sidecar',
 
     # local apps
     'apps.users',
@@ -91,9 +93,14 @@ TEMPLATES = [
 
 # DATABASE SETTINGS
 DATABASES = {
-    'default': env.db(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
-    )
+    'default': {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env("DB_NAME"),
+        "USER": env("DB_USER"),
+        "PASSWORD": env("DB_PASSWORD"),
+        "HOST": env("DB_HOST"),
+        "PORT": env("DB_PORT"),
+    }
 }
 
 
@@ -164,6 +171,8 @@ REST_FRAMEWORK = {
         'anon': '100/day',
         'user': '1000/day'
     },  
+
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 
@@ -185,3 +194,11 @@ PAYCHANGU_SECRET_KEY = env('PAYCHANGU_SECRET_KEY')
 PAYCHANGU_PUBLIC_KEY = env('PAYCHANGU_PUBLIC_KEY')
 PAYCHANGU_WEBHOOK_SECRET = env('PAYCHANGU_WEBHOOK_SECRET')
 BACKEND_BASE_URL = env("BACKEND_BASE_URL")
+
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Masika Wathu API',
+    'DESCRIPTION': 'Marketplace Backend API Documentation',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
